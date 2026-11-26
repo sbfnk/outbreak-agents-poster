@@ -1,0 +1,27 @@
+name: Build poster
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Open Sans
+        run: sudo apt-get update && sudo apt-get install -y fonts-open-sans
+      - uses: typst-community/setup-typst@v4
+        with:
+          typst-version: 0.15.1
+      - name: Build draft and print copies
+        run: |
+          typst compile poster.typ poster-draft.pdf
+          typst compile --input drafts=false poster.typ poster.pdf
+      - uses: actions/upload-artifact@v4
+        with:
+          name: poster
+          path: |
+            poster.pdf
+            poster-draft.pdf
