@@ -48,142 +48,75 @@
   ]
 ]
 
-// The six-step modelling workflow, with who does each step.
-#let step(name, tag) = stack(
-  dir: ttb, spacing: 12pt,
-  block(height: 3.6em, width: 100%)[#align(center + bottom)[#text(size: 24pt)[#tag]]],
-  rect(width: 100%, height: 70pt, radius: 10pt, stroke: 4pt + teal, fill: wash)[
-    #align(center + horizon)[#text(size: 27pt, weight: "bold", fill: teal)[#name]]
-  ],
-)
-#let arrow = align(center + bottom)[#pad(bottom: 16pt)[#text(size: 40pt, fill: teal)[→]]]
-#let workflow = grid(
-  columns: (1fr, auto, 1fr, auto, 1fr, auto, 1fr, auto, 1fr, auto, 1fr),
-  column-gutter: 6pt,
-  step("Question", people[people]),
-  arrow,
-  step("Data", agents[agents read and digitise]),
-  arrow,
-  step("Model", [#people[people choose,] #agents[agents write]]),
-  arrow,
-  step("Fit", agents[agents, every push]),
-  arrow,
-  step("Check", [#agents[agents run,] #people[people judge]]),
-  arrow,
-  step("Report", [#agents[agents draft,] #people[people sign]]),
-)
-
-// The cumulative-forecast bug, in order. Dots coloured by who acted.
+// The cumulative-forecast bug, in order. Dots coloured by who acted: humans
+// brick, agents slate, grey where the record does not say.
 #let event(when, who, body) = grid(
   columns: (30pt, 1fr), column-gutter: 14pt,
-  pad(top: 6pt, circle(radius: 13pt, fill: if who == "people" { brick } else { slate })),
-  [#text(size: 26pt, weight: "bold", fill: teal)[#when] \ #text(size: 26pt)[#body]],
+  pad(top: 4pt, circle(radius: 12pt, fill: if who == "humans" { brick } else if who == "agents" { slate } else { luma(170) })),
+  [#text(size: 23pt, weight: "bold", fill: teal)[#when] \ #text(size: 23pt)[#body]],
 )
 
-// The 26 June forecast of cumulative confirmed cases, recomputed from the
-// release's posterior draws with the buggy and the fixed formula
-// (scripts/cumulative_bug.py).
+// The 26 June release's published one-week forecast of cumulative confirmed
+// cases, from its forecast table (results-1002), against the reported counts
+// to the 23 June cut-off (data/cumulative_bug.json).
 #let bugdata = json("data/cumulative_bug.json")
 #let polyline(pts, stroke) = curve(stroke: stroke, curve.move(pts.at(0)), ..pts.slice(1).map(p => curve.line(p)))
-#let band(lo, hi, fill) = curve(fill: fill, stroke: none, curve.move(lo.at(0)), ..lo.slice(1).map(p => curve.line(p)), ..hi.rev().map(p => curve.line(p)), curve.close())
+// Central intervals for cumulative confirmed cases by 30 June (T+7).
+#let published = (
+  (level: "90%", lo: 322, hi: 3706, half: 16pt, fill: brick.transparentize(78%)),
+  (level: "60%", lo: 650, hi: 1951, half: 26pt, fill: brick.transparentize(55%)),
+  (level: "30%", lo: 874, hi: 1457, half: 36pt, fill: brick.transparentize(20%)),
+)
 #let forecast-plot(height: 300mm) = layout(size => {
   let w = size.width
   let h = height
-  let (xmin, xmax) = (-25, 7)
-  let (ymin, ymax) = (0, 2600)
-  let (l, r, t, b) = (110pt, 30pt, 60pt, 70pt)
+  let (xmin, xmax) = (-14, 11)
+  let (ymin, ymax) = (0, 4000)
+  let (l, r, t, b) = (110pt, 20pt, 50pt, 70pt)
   let px(x) = l + (x - xmin) / (xmax - xmin) * (w - l - r)
   let py(y) = h - b - (y - ymin) / (ymax - ymin) * (h - t - b)
-  let series(rows, i) = rows.map(d => (px(d.day), py(d.q.at(i))))
-  let obs = bugdata.observed.map(d => (px(d.day), py(d.value)))
+  let c0 = bugdata.c0
+  let shown = bugdata.observed.filter(d => d.day >= xmin)
+  let obs = shown.map(d => (px(d.day), py(d.value)))
+  // Split the reported series at missing days so the line does not bridge them.
+  let runs = shown.fold((), (acc, d) => {
+    if acc.len() > 0 and d.day == acc.last().last().day + 1 { acc.last().push(d); acc } else { acc + ((d,),) }
+  }).map(run => run.map(d => (px(d.day), py(d.value))))
+  let xf = px(7)
   box(width: w, height: h)[
-    #for y in (0, 500, 1000, 1500, 2000, 2500) {
+    #for y in (0, 1000, 2000, 3000, 4000) {
       place(top + left, line(start: (l, py(y)), end: (w - r, py(y)), stroke: 1pt + luma(225)))
       place(top + left, dx: 0pt, dy: py(y) - 14pt, box(width: l - 16pt, align(right, text(size: 22pt, fill: luma(110))[#y])))
     }
     #place(top + left, line(start: (l, h - b), end: (w - r, h - b), stroke: 2pt + ink))
-    #for (x, lab) in ((-25, "29 May"), (-14, "9 June"), (0, "23 June"), (7, "30 June")) {
+    #for (x, lab) in ((-14, "9 June"), (-7, "16 June"), (0, "23 June"), (7, "30 June")) {
       place(top + left, dx: px(x) - 60pt, dy: h - b + 10pt, box(width: 120pt, align(center, text(size: 22pt, fill: luma(110))[#lab])))
     }
     #place(top + left, dx: 0pt, dy: -6pt, text(size: 24pt, weight: "bold")[Total confirmed cases to date])
-    #place(top + left, line(start: (px(0), t + 30pt), end: (px(0), h - b), stroke: (paint: luma(150), thickness: 2pt, dash: "dashed")))
-    #place(top + left, dx: px(0) - 120pt, dy: t + 30pt, text(size: 22pt, fill: luma(110))[cut-off])
-    #place(top + left, line(start: (px(-21), py(bugdata.c0)), end: (w - r, py(bugdata.c0)), stroke: (paint: ink, thickness: 2pt, dash: "dotted")))
-    #place(top + left, band(series(bugdata.bug, 0), series(bugdata.bug, 2), brick.transparentize(80%)))
-    #place(top + left, band(series(bugdata.fix, 0), series(bugdata.fix, 2), teal.transparentize(70%)))
-    #place(top + left, polyline(series(bugdata.bug, 1), (paint: brick, thickness: 5pt, dash: "dashed")))
-    #place(top + left, polyline(series(bugdata.fix, 1), 5pt + teal))
-    #place(top + left, polyline(obs, 5pt + ink))
+    // Everything below the count already confirmed is impossible.
+    #place(top + left, dx: px(0), dy: py(c0), rect(width: px(xmax) - px(0), height: py(0) - py(c0), fill: luma(238), stroke: none))
+    #place(top + left, line(start: (px(xmin), py(c0)), end: (px(xmax), py(c0)), stroke: (paint: ink, thickness: 3pt, dash: "dashed")))
+    #place(top + left, line(start: (px(0), t), end: (px(0), h - b), stroke: (paint: luma(150), thickness: 2pt, dash: "dotted")))
+    #place(top + left, dx: px(0) + 10pt, dy: t, text(size: 22pt, fill: luma(110))[cut-off])
+    #for run in runs.filter(r => r.len() > 1) { place(top + left, polyline(run, 5pt + ink)) }
     #for p in obs { place(top + left, dx: p.at(0) - 6pt, dy: p.at(1) - 6pt, circle(radius: 6pt, fill: ink)) }
-    #place(top + left, dx: px(-24), dy: py(2550), grid(columns: (60pt, auto), column-gutter: 12pt, row-gutter: 14pt, align: horizon,
+    #for iv in published {
+      place(top + left, dx: xf - iv.half, dy: py(iv.hi), rect(width: 2 * iv.half, height: py(iv.lo) - py(iv.hi), fill: iv.fill, stroke: none))
+    }
+    #for iv in published {
+      let dx = if iv.level == "30%" { xf - 46pt - 50pt } else { xf + 46pt }
+      place(top + left, dx: dx, dy: py(iv.lo) - 14pt, text(size: 22pt, fill: brick, weight: "bold")[#iv.lo])
+    }
+    #place(top + left, dx: xf + 46pt, dy: py(3706) - 14pt, text(size: 22pt, fill: brick, weight: "bold")[3,706])
+    #place(top + left, dx: px(xmin) + 10pt, dy: py(c0) - 36pt, text(size: 24pt, weight: "bold")[1,118 already confirmed])
+    #place(top + left, dx: px(0.4), dy: py(2700), box(width: xf - px(0.4) - 50pt, text(size: 24pt, fill: brick, weight: "bold")[over a third of the forecast lies in the grey]))
+    #place(top + left, dx: px(xmin) + 10pt, dy: py(3900), grid(columns: (auto, auto), column-gutter: 12pt, row-gutter: 10pt, align: horizon,
       line(length: 56pt, stroke: 5pt + ink), text(size: 24pt)[confirmed cases, reported],
-      line(length: 56pt, stroke: 5pt + teal), text(size: 24pt, fill: teal, weight: "bold")[fixed: total + new cases (reconstructed)],
-      line(length: 56pt, stroke: (paint: brick, thickness: 5pt, dash: "dashed")), text(size: 24pt, fill: brick, weight: "bold")[bug: total × growth factor (reconstructed)],
+      stack(dir: ltr, rect(width: 18pt, height: 30pt, fill: brick.transparentize(78%)), rect(width: 18pt, height: 30pt, fill: brick.transparentize(55%)), rect(width: 18pt, height: 30pt, fill: brick.transparentize(20%))),
+      text(size: 24pt, fill: brick, weight: "bold")[published 26 June: 90%, 60% and 30% intervals],
     ))
-
-
-    #place(top + left, dx: px(0.6), dy: py(780), text(size: 24pt, fill: brick)[69 of 200 draws \ fell below this])
-    #place(top + left, dx: px(-21), dy: py(bugdata.c0) - 34pt, text(size: 22pt, fill: ink)[1,118 already confirmed])
   ]
 })
-
-
-// The joint model, left to right: parameters, latent infections and onsets,
-// then the observation process behind each of the nine fitted data streams.
-// Drawn after the methods page of BVDOutbreakSize (diagrams/joint_overview.svg).
-#let model-dag(height: 130mm) = layout(size => box(width: size.width, height: height, {
-  let w = size.width
-  let h = height
-  let grey = luma(235)
-  let blue = rgb("#dceaf3")
-  let orange = rgb("#fbe3cc")
-  let nbox(x, y, bw, bh, fill, body, size: 19pt) = place(top + left, dx: x, dy: y,
-    box(width: bw, height: bh, fill: fill, stroke: 1.5pt + luma(150), radius: 6pt, inset: 6pt,
-      align(center + horizon, text(size: size)[#body])))
-  let seg(a, b) = place(top + left, line(start: a, end: b, stroke: 1.8pt + luma(120)))
-  let streams = (
-    ([Suspected cases], [report delay, reporting fraction], "on"),
-    ([Treatment centres], [admissions, occupancy, beds], "on"),
-    ([Specimens, confirmed cases], [receipt delay, test positivity], "on"),
-    ([Recovered], [recovery delay], "on"),
-    ([Confirmed deaths], [death-pool positivity], "on"),
-    ([Suspected deaths], [onset-to-death delay, CFR], "on"),
-    ([Onset curve], [reporting hazard], "on"),
-    ([Uganda exports, deaths], [travel rate, export propensity], "inf"),
-    ([Genetic TMRCA], [outbreak age], "inf"),
-  )
-  let n = streams.len()
-  let rowh = h / n
-  let (x1, w1) = (0pt, w * 0.17)
-  let (x2, w2) = (w * 0.21, w * 0.19)
-  let x3 = w * 0.45
-  let (x4, w4) = (w * 0.73, w * 0.27)
-  // parameters
-  let ph = h * 0.2
-  for (i, t) in ([Seeding], [Reproduction number by province], [Generation interval]).enumerate() {
-    let y = h * 0.12 + i * (ph + h * 0.06)
-    nbox(x1, y, w1, ph, grey, t)
-    seg((x1 + w1, y + ph / 2), (x2, h * 0.3))
-  }
-  // latent
-  let inf-y = h * 0.18
-  let inf-h = h * 0.24
-  nbox(x2, inf-y, w2, inf-h, blue, [*Infections* in 8 provinces, linked by importation])
-  let on-y = h * 0.52
-  let on-h = h * 0.16
-  nbox(x2, on-y, w2, on-h, blue, [*Symptom onsets*])
-  seg((x2 + w2 / 2, inf-y + inf-h), (x2 + w2 / 2, on-y))
-  nbox(x2, h * 0.78, w2, h * 0.16, blue, [then 67 health zones], size: 17pt)
-  seg((x2 + w2 / 2, on-y + on-h), (x2 + w2 / 2, h * 0.78))
-  // observation processes and fitted streams
-  for (i, (obs, proc, from)) in streams.enumerate() {
-    let yc = i * rowh + rowh / 2
-    let src = if from == "on" { (x2 + w2, on-y + on-h / 2) } else { (x2 + w2, inf-y + inf-h / 2) }
-    seg(src, (x3 - 6pt, yc))
-    place(top + left, dx: x3, dy: yc - 11pt, text(size: 17pt, fill: luma(80))[#proc])
-    nbox(x4, i * rowh + 3pt, w4, rowh - 6pt, orange, obs, size: 18pt)
-  }
-}))
 
 // ---------------------------------------------------------------- header
 #let header = grid(
@@ -191,130 +124,133 @@
   [
     #text(size: 76pt, weight: "bold", fill: teal)[Real-time outbreak analysis with AI agents]
     #v(-30pt)
-    #text(size: 64pt, weight: "semibold", fill: slate)[Lessons from the 2026 Ebola outbreak]
+    #text(size: 64pt, weight: "semibold", fill: slate)[Lessons from the 2026 Ebola outbreak in the DRC]
     #v(6pt)
-    #text(size: 34pt)[Sebastian Funk, Sam Abbott #todo[co-authors?] \ London School of Hygiene & Tropical Medicine]
+    #text(size: 34pt)[Sebastian Funk, Sam Abbott \ London School of Hygiene & Tropical Medicine]
   ],
   image("figures/lshtm-logo.png", height: 190pt),
 )
 
 // ---------------------------------------------------------------- main finding
-#let finding = block(width: 100%, fill: teal, inset: (x: 40pt, y: 34pt), radius: 14pt)[
+// Two halves: what agents made possible, and what it cost.
+#let night = rgb("#2b3a4a")
+#let finding-half(fill, title, body) = block(width: 100%, height: 74mm, fill: fill, inset: (x: 36pt, y: 26pt), radius: 14pt)[
   #set text(fill: white)
-  #grid(
-    columns: (1fr, auto), column-gutter: 40pt, align: horizon,
-    text(size: 50pt, weight: "bold")[#draft[AI agents let us analyse the outbreak at a speed and detail we couldn't manage before. The errors that mattered took expertise to spot. That makes expertise more valuable, not less.]],
-    align(center)[
-      #text(size: 120pt, weight: "bold")[99%] \
-      #text(size: 26pt)[of added code and report lines \ committed by agent accounts] \
-      #text(size: 18pt)[our Ebola model, to 5 October 2026]
-    ],
-  )
+  #text(size: 46pt, weight: "bold")[#title]
+  #v(2pt)
+  #text(size: 30pt)[#body]
 ]
+#let finding = grid(
+  columns: (1fr, 1fr), column-gutter: 36pt, rows: auto,
+  finding-half(teal, draft[Agents let us move fast], draft[Started 19 May, first estimate the next day; 192 published result releases and 24 model versions by 18 November.]),
+  finding-half(night, draft[… but made errors we found hard to spot], draft[A published forecast let total cases fall below those already confirmed, after tests and human review.]),
+)
 
 // ---------------------------------------------------------------- panels
-#let panel1 = panel("1", draft[How we ran the analysis], [
-    #workflow
-    #v(18pt)
-    #align(right)[#text(size: 24pt)[#people[■ people] #h(1em) #agents[■ agents] #h(1em) after Abbott et al. 2026]]
-    #v(18pt)
-    - #draft[Each change starts as an issue, from a #people[person] or an #agents[agent] instructed by one.]
-    - #draft[An #agents[agent] drafts the pull request; since August, #agents[review agents] check many of them first.]
-    - #draft[A #people[person] reviews and merges every change; the agent fixes, or argues its case.]
-    - #draft[Everything is public. Working together is harder: the reasoning stays in one person's agent sessions.]
-  ], [Human review is, at least in our set-up, still needed.])
+#let stat(value, label, fill: ink) = block[
+  #text(size: 56pt, weight: "bold", fill: fill)[#value] \
+  #text(size: 22pt)[#label]
+]
 
-#let panel2 = panel("2", draft[How big was the outbreak?], [
-    #grid(columns: (1fr, 168mm), column-gutter: 24pt,
-      [
-        #text(size: 24pt)[#draft[As new situation reports came in, we estimated where cases were rising and how many people had been infected, including infections missed by surveillance. The first estimate was out a day after we started, with 188 updates since.]]
-        #v(8pt)
-        #grid(columns: (auto, auto), column-gutter: 30pt,
-          [#text(size: 46pt, weight: "bold", fill: slate)[17k to 35k] \ #text(size: 20pt)[#draft[infections to date (90% interval)]]],
-          [#text(size: 46pt, weight: "bold", fill: ink)[11,680] \ #text(size: 20pt)[#draft[confirmed, data to 18 November]]],
-        )
-      ],
-      // The capture is 4500 × 3000: the top 15% is the control bar and the
-      // right 28% the sidebar, both cropped off, leaving the map and its legend.
-      {
-        let w = 168mm
-        let iw = w / 0.72
-        let full = iw * 3000 / 4500
-        box(clip: true, width: w, height: full * 0.85, stroke: 1pt + luma(200))[
-          #place(top + left, dy: -full * 0.15, image("figures/bvd-map.png", width: iw, height: full, fit: "stretch"))
-        ]
-      },
+#let panel1 = panel("1", draft[How big was the outbreak?], [
+    #text(size: 24pt, fill: luma(90))[#draft[Democratic Republic of the Congo, data to 18 November 2026 (model release results-3541)]]
+    #v(-2pt)
+    #set text(size: 20pt)
+    #grid(columns: (auto, auto, auto, auto), column-gutter: 1fr,
+      stat(fill: slate, [17k to 35k #text(size: 22pt, weight: "regular")[90% interval]], draft[estimated cumulative infections]),
+      stat([11,680], draft[reported confirmed cases]),
+      stat(fill: teal, [9], draft[data streams]),
+      stat(fill: teal, [67], draft[health zones]),
     )
-    #v(14pt)
-    #model-dag(height: 100mm)
-    #v(4pt)
-    #text(size: 18pt, fill: luma(110))[#draft[The joint model: parameters (grey) and latent quantities (blue), fitted to nine data streams (orange). Data: DRC INSP situation reports.]]
+    #v(8pt)
+    // The capture is 4500 × 3000; the top 15% is the dashboard's control bar.
+    #layout(size => {
+      let w = size.width
+      let full = w * 3000 / 4500
+      box(clip: true, width: w, height: full * 0.85, stroke: 1pt + luma(200))[
+        #place(top + left, dy: -full * 0.15, image("figures/bvd-map.png", width: w, height: full, fit: "stretch"))
+      ]
+    })
+    #v(0pt)
+    #text(size: 18pt, fill: luma(110))[#draft[Live dashboard: reproduction number by health zone. Data: DRC INSP situation reports.]]
   ], none)
 
-#let panel3 = panel("3", draft[A forecast in which total cases could fall], [
+#let panel2 = panel("2", draft[How we did it], [
+    #image("figures/agents-swarm.png", width: 100%)
+    #v(-6pt)
+    #align(right)[#text(size: 18pt, fill: luma(110))[#draft[Each human directs their own agent account, which hands work to a swarm of agents.]]]
+    #v(10pt)
+    #grid(columns: (auto, auto, auto), column-gutter: 30pt,
+      stat(fill: slate, [99%], draft[of added lines came from agent accounts]),
+      stat(fill: brick, [582/586], draft[pull requests merged from a human's account]),
+      stat(fill: brick, [34%], draft[of agent pull requests merged with no GitHub review by a human]),
+    )
+    #text(size: 18pt, fill: luma(110))[#draft[All to 5 October 2026.]]
+    #v(14pt)
+    #text(size: 30pt)[#draft[Two of us ran one model fitted to nine data streams, refitted with every situation report. We could not have built and kept it up by hand. The code, reports and pull requests are public. Much of the reasoning stayed in private agent sessions.]]
+  ], draft[Agents wrote the code; humans decide what goes in.])
+
+#let panel3 = panel("3", draft[How an error got past tests and review], [
     #grid(
       columns: (1.45fr, 1fr), column-gutter: 40pt,
       [
-        #forecast-plot(height: 155mm)
-        #text(size: 21pt, fill: luma(110))[One-week projection from the 26 June release (data to 23 June), recomputed from its 200 posterior draws of the growth rate with each formula; lines are medians, bands 90% intervals. The fixed line starts from the average daily new cases over the last six days and grows them at the same rate.]
+        #forecast-plot(height: 150mm)
+        #text(size: 21pt, fill: luma(110))[#draft[Reported confirmed cases to the 23 June cut-off, and the one-week forecast for 30 June published on 26 June (release results-1002). Grey: totals below those already confirmed.]]
+        #v(12pt)
+        #text(size: 27pt)[#draft[One of our published outputs was a one-week forecast of cumulative cases. Its 90% interval went as low as 322 cases, when 1,118 had already been confirmed. The tests were written with the code and only drew a growing outbreak, so they never checked whether the total could fall.]]
       ],
       [
-        #event("9 June", "agents")[#agents[Agent] writes the projection; tests pass and a #people[person] approves it]
-        #v(16pt)
-        #event("29 June, 07:19", "people")[#people[One of us], looking at a plot: "Why does our cumulative case count go down??"]
-        #v(16pt)
-        #event("08:20", "agents")[#agents[Agent] traces it to the code]
-        #v(16pt)
-        #event("3 July", "agents")[#agents[Agent]'s fix merged after #people[human] review]
-        #v(24pt)
-        #text(size: 30pt)[#draft[In the reconstruction, #text(weight: "bold", fill: brick)[35%] of the 200 posterior draws projected fewer cases a week ahead than had already been confirmed (red shading under the dotted line).]]
+        #event("9 June", "agents")[#draft[#agents[Agent] rewrites the model in one 23,000-line pull request; its tests pass and a #people[human] approves it]]
+        #v(10pt)
+        #event("29 June, 07:19 BST", "humans")[#draft[#people[Human], looking at a plot: "Why does our cumulative case count go down??"]]
+        #v(10pt)
+        #event("08:20 to 09:00", "agents")[#draft[#agents[Agent] traces it to the code and posts a public issue. A #people[human] confirms the bug.]]
+        #v(10pt)
+        #event("3 July", "agents")[#draft[#agents[Agent]'s fix merged after #people[human] review]]
+        #v(10pt)
+        #event("26 to 27 August", "humans")[#draft[#people[Human] questions odd forecast plots; the #agents[agent]'s fixes correct a flaw in the July fix and four other defects]]
       ],
     )
-    #v(20pt)
+    #v(16pt)
+    #text(size: 28pt, weight: "bold", fill: teal)[#draft[Other errors]]
+    #v(4pt)
     #grid(
-      columns: (1fr, 1fr, 1fr, 1fr), column-gutter: 16pt,
+      columns: (1fr, 1fr, 1fr), column-gutter: 16pt,
       ..(
-        ([Five forecast defects], draft[were in the published forecast until the August fix. Its 90% intervals covered nearly every observation: far too wide.], draft[Showed up in: scoring forecasts against what happened], brick),
-        ([Wrong prior], draft[Test sensitivity taken from a study of a different ebolavirus. Raised from a bot account.], draft[Fixing it took knowing how the test fails in the field], brick),
-        ([A model of its own], draft[Asked for a forecast for one health zone, an agent built a new model instead of using the published fits.], draft[Spotting it took: knowing what the request was for], brick),
-        ([A data problem raised by a bot], draft[A silent revision of Beni cases in SitRep 160. Whether a person prompted it, the record does not show.], draft[Agents spot things too, but the record hides who did], slate),
+        ([Intervals far too wide], draft[90% intervals covered nearly every observation until the 27 August fix.], draft[Scoring made it noticeable], teal),
+        ([Wrong prior], draft[Test sensitivity from a study of a different ebolavirus.], draft[Caught by a human], brick),
+        ([A silent data revision], draft[A situation report quietly changed past cases.], draft[Raised by an agent], slate),
       ).map(((t, b, k, c)) =>
-        block(width: 100%, stroke: 3pt + c, radius: 8pt, inset: 14pt)[
-          #text(size: 26pt, weight: "bold", fill: c)[#t] \
-          #text(size: 23pt)[#b] \
-          #text(size: 24pt, weight: "bold", fill: c)[#k]
+        block(width: 100%, height: 57mm, stroke: 2pt + luma(180), radius: 8pt, inset: 14pt)[
+          #text(size: 28pt, weight: "bold")[#t] \
+          #text(size: 26pt)[#b] \
+          #text(size: 26pt, weight: "bold", fill: c)[#k]
         ])
     )
-  ], draft[The tests passed and we approved the code. Spotting the error took a modeller who knew total cases can't fall.])
+  ], draft[Tests written alongside the code share its blind spots.])
 
-#let panel4 = panel("4", draft[Where should the expertise sit?], [
-    #let place-col(name, example) = block(width: 100%)[
-      #text(size: 30pt, weight: "bold", fill: teal)[#name] \
+#let panel4 = panel("4", draft[What should experts be doing?], [
+    #let action(name, example) = block(width: 100%)[
+      #text(size: 32pt, weight: "bold", fill: teal)[#name] \
       #v(4pt)
-      #text(size: 24pt)[#example]
+      #text(size: 27pt)[#example]
     ]
     #grid(
       columns: (1fr,) * 5, column-gutter: 30pt,
-      place-col([In people], draft[One of us spotted the falling forecast in a plot. Review when: at the start, every step or the end? Of the code or the outputs?]),
-      place-col([In instructions], draft[A correction made twice goes into the agents' instructions, but agents don't reliably follow them.]),
-      place-col([In tests], draft["Cumulative cases never fall" became a test only after the bug.]),
-      place-col([In components], draft[Delay distributions come from a tested package of components.]),
-      place-col([In packages], draft[An unregistered scoring package was dropped, so the agent wrote its own scoring.]),
+      action(draft[Reading the outputs], draft[A human saw the falling forecast in a plot, not in the code.]),
+      action(draft[Writing the checks], draft["Totals never fall below those confirmed" would have caught it at once.]),
+      action(draft[Designing the evaluation], draft[Checks only catch failures we foresee; scoring let us notice the wide intervals.]),
+      action(draft[Setting the rules], draft[Require small changes: no one can review a 23,000-line change. Then check they are followed.]),
+      action(draft[Building components], draft[Delay distributions, including the censoring, come from a tested package the agents reuse.]),
     )
     #v(16pt)
-    #grid(columns: (auto, 1fr, auto), column-gutter: 16pt, align: horizon,
-      text(size: 22pt, fill: luma(110))[#draft[flexible, all checked by people]],
-      line(length: 100%, stroke: 4pt + teal),
-      text(size: 22pt, fill: luma(110))[#draft[checked once, hard to adapt]],
-    )
-    #v(12pt)
-    #text(size: 26pt)[#draft[#text(weight: "bold", fill: slate)[Our hypothesis:] review and token costs both fall as more expertise is built into validated components.]]
-  ], draft[How best to encode human expertise, and where it should sit, is completely unresolved. That is what we want to measure.])
+    #text(size: 30pt)[#draft[#text(weight: "bold", fill: slate)[Our hypothesis:] the more expertise goes into tested components and checks, the less review each change needs.]]
+  ], draft[We will test whether validated components cut both review effort and errors.])
 
 // ---------------------------------------------------------------- footer
 #let footer = grid(
   columns: (auto, auto, 1fr), column-gutter: 24pt, align: horizon,
-  qrcode("https://epiforecasts.io/BVDOutbreakSize/stable/", width: 150pt),
+  qrcode("https://epiforecasts.io/BVDOutbreakSize/stable/", width: 120pt),
   [
     #text(size: 30pt, weight: "bold", fill: teal)[Live report and dashboard] \
     #text(size: 24pt)[epiforecasts.io/BVDOutbreakSize]
@@ -322,7 +258,7 @@
   align(right)[#block(fill: brick, inset: (x: 30pt, y: 20pt), radius: 10pt, width: 95%)[
     #set text(fill: white)
     #align(left)[
-      #text(size: 44pt, weight: "bold")[#draft[Where do the next experts come from, if agents do the making?]]
+      #text(size: 35pt, weight: "bold")[#draft[If agents write the models, how will the next modellers learn to spot these errors?]]
     ]
   ]],
 )
@@ -334,7 +270,7 @@
   grid.cell(colspan: 2, header),
   grid.cell(colspan: 2, finding),
   panel1, panel2,
-  grid.cell(colspan: 2, block(height: 357mm, panel3)),
-  grid.cell(colspan: 2, block(height: 175mm, panel4)),
-  grid.cell(colspan: 2, stack(dir: ttb, spacing: 14pt, line(length: 100%, stroke: 2pt + teal), footer)),
+  grid.cell(colspan: 2, block(height: 385mm, panel3)),
+  grid.cell(colspan: 2, block(height: 145mm, panel4)),
+  grid.cell(colspan: 2, stack(dir: ttb, spacing: 20pt, line(length: 100%, stroke: 2pt + teal), footer)),
 )
